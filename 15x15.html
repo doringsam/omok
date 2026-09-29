@@ -1,0 +1,1221 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>15x15 오목 (Gomoku)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Noto Sans KR', 'sans-serif'],
+                    },
+                    colors: {
+                        board: {
+                            DEFAULT: '#E4A853',
+                            dark: '#C88B38',
+                            light: '#F5C87B',
+                            line: '#4A3210'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #121826;
+            color: #F3F4F6;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* Board subtle texture overlay */
+        .wood-texture {
+            background-color: #e0a350;
+            background-image: 
+                radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.15), rgba(0, 0, 0, 0.15)),
+                repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(90, 50, 10, 0.03) 3px, rgba(90, 50, 10, 0.03) 6px);
+            box-shadow: 
+                0 20px 30px -10px rgba(0, 0, 0, 0.7),
+                inset 0 0 15px rgba(0, 0, 0, 0.3),
+                inset 0 0 2px rgba(255, 255, 255, 0.5);
+        }
+
+        .board-shadow {
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
+        }
+
+        /* Custom scrollbar for game log */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+
+        /* Turn indicator animations */
+        @keyframes active-pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.85; transform: scale(1.03); }
+        }
+        .turn-active {
+            animation: active-pulse 2s infinite ease-in-out;
+        }
+
+        /* Glassmorphism containers */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between overflow-x-hidden">
+
+    <!-- Header -->
+    <header class="w-full bg-slate-900/80 border-b border-slate-800 py-3 px-4 sm:px-8 backdrop-blur-md sticky top-0 z-40">
+        <div class="max-w-6xl mx-auto flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-600 to-amber-400 flex items-center justify-center shadow-lg shadow-amber-500/20">
+                    <i class="fa-solid font-bold text-slate-900 text-xl">五</i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                        15x15 정통 오목
+                        <span class="text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full border border-amber-500/30 font-medium">Gomoku</span>
+                    </h1>
+                    <p class="text-xs text-slate-400">두 사람이 번갈아 돌을 놓아 5개 연속을 만드세요</p>
+                </div>
+            </div>
+
+            <!-- Header Quick Actions -->
+            <div class="flex items-center space-x-2 sm:space-x-3">
+                <button id="btn-sound" class="p-2.5 rounded-lg glass-panel hover:bg-slate-700/50 text-slate-300 hover:text-white transition-all text-sm flex items-center gap-2" title="소리 켜기/끄기">
+                    <i id="icon-sound" class="fa-solid fa-volume-high text-amber-400"></i>
+                    <span class="hidden sm:inline text-xs font-medium">음향</span>
+                </button>
+                <button id="btn-rules" class="p-2.5 rounded-lg glass-panel hover:bg-slate-700/50 text-slate-300 hover:text-white transition-all text-sm flex items-center gap-2" title="게임 규칙 보기">
+                    <i class="fa-solid fa-circle-info text-blue-400"></i>
+                    <span class="hidden sm:inline text-xs font-medium">규칙</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-grow max-w-6xl w-full mx-auto p-3 sm:p-6 flex flex-col lg:flex-row gap-6 items-center lg:items-start justify-center">
+
+        <!-- Left / Top: Board View -->
+        <div class="flex flex-col items-center w-full lg:w-auto">
+            <!-- Board Container -->
+            <div class="relative p-3 sm:p-5 rounded-2xl wood-texture board-shadow border-4 border-amber-900/60 max-w-full">
+                <!-- Canvas Board -->
+                <canvas id="omokCanvas" class="cursor-pointer touch-none block rounded-lg shadow-inner"></canvas>
+
+                <!-- Board Overlay Effects (e.g. Loading / Winner Glow) -->
+                <div id="board-overlay" class="absolute inset-0 bg-slate-950/40 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300 z-10">
+                    <div id="winner-announcement" class="text-center p-6 bg-slate-900/90 rounded-2xl border border-amber-500/40 shadow-2xl transform scale-90 transition-transform duration-300 max-w-xs sm:max-w-md mx-4">
+                        <div id="winner-badge" class="inline-block px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 mb-2">ROUND 1</div>
+                        <div id="winner-icon-wrapper" class="w-16 h-16 rounded-full mx-auto mb-3 flex items-center justify-center shadow-lg">
+                            <i id="winner-icon" class="fa-solid fa-trophy text-2xl"></i>
+                        </div>
+                        <h2 id="winner-title" class="text-2xl font-black text-white mb-1">승리!</h2>
+                        <p id="winner-subtitle" class="text-slate-300 text-sm mb-5">흑돌이 5목을 완성했습니다.</p>
+                        
+                        <div class="flex flex-col sm:flex-row gap-2">
+                            <button id="btn-modal-next-round" class="flex-1 py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 text-sm">
+                                <i class="fa-solid fa-play"></i> <span id="text-modal-next">다음 라운드 진행</span>
+                            </button>
+                            <button id="btn-modal-reset-series" class="py-3 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl border border-slate-700 transition-all text-sm flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-rotate-right"></i> 매치 리셋
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Board Controls below board -->
+            <div class="w-full max-w-[500px] flex items-center justify-between mt-4 px-1 gap-2">
+                <button id="btn-undo" class="flex-1 py-2.5 px-3 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-700 text-slate-200 text-sm font-medium rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
+                    <i class="fa-solid fa-rotate-left text-amber-400"></i> 한 수 무르기
+                </button>
+                <button id="btn-toggle-numbers" class="flex-1 py-2.5 px-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm font-medium rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
+                    <i class="fa-solid fa-hashtag text-blue-400"></i> <span id="text-numbers">수순 표시</span>
+                </button>
+                <button id="btn-restart" class="flex-1 py-2.5 px-3 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-amber-300 text-sm font-medium rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
+                    <i class="fa-solid fa-arrows-rotate"></i> 새 게임
+                </button>
+            </div>
+        </div>
+
+        <!-- Right / Side: Control Dashboard & Stats -->
+        <div class="w-full lg:w-80 flex flex-col gap-4">
+
+            <!-- 3전 2선승제 시리즈 스코어보드 Card -->
+            <div class="glass-panel p-4 rounded-2xl border-amber-500/30 bg-slate-900/50">
+                <div class="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
+                    <span class="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                        <i class="fa-solid fa-trophy text-amber-400"></i> 3전 2선승제 매치
+                    </span>
+                    <button id="btn-reset-series-score" class="text-[11px] text-slate-400 hover:text-amber-400 transition-colors flex items-center gap-1" title="스코어 리셋">
+                        <i class="fa-solid fa-arrows-rotate text-[10px]"></i> 매치 초기화
+                    </button>
+                </div>
+                
+                <div class="flex items-center justify-between px-2 py-1 bg-slate-950/60 rounded-xl border border-slate-800/80">
+                    <!-- P1 Series Score -->
+                    <div class="flex flex-col items-center">
+                        <span class="text-[11px] text-slate-400 font-medium mb-1">흑돌 (P1)</span>
+                        <div class="flex items-center gap-1.5" id="p1-score-dots">
+                            <span class="w-3.5 h-3.5 rounded-full border border-amber-500/40 bg-slate-800 inline-block transition-all" id="p1-win-1"></span>
+                            <span class="w-3.5 h-3.5 rounded-full border border-amber-500/40 bg-slate-800 inline-block transition-all" id="p1-win-2"></span>
+                        </div>
+                    </div>
+
+                    <!-- Round / VS status -->
+                    <div class="text-center">
+                        <div id="series-round-display" class="text-xs font-black text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/20 mb-0.5">ROUND 1</div>
+                        <div id="series-score-text" class="text-lg font-black text-white font-mono tracking-wider">0 : 0</div>
+                    </div>
+
+                    <!-- P2 Series Score -->
+                    <div class="flex flex-col items-center">
+                        <span id="p2-series-label" class="text-[11px] text-slate-400 font-medium mb-1">백돌 (P2)</span>
+                        <div class="flex items-center gap-1.5" id="p2-score-dots">
+                            <span class="w-3.5 h-3.5 rounded-full border border-amber-500/40 bg-slate-800 inline-block transition-all" id="p2-win-1"></span>
+                            <span class="w-3.5 h-3.5 rounded-full border border-amber-500/40 bg-slate-800 inline-block transition-all" id="p2-win-2"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Game Mode Selector Card -->
+            <div class="glass-panel p-4 rounded-2xl">
+                <label class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 block">게임 모드</label>
+                <div class="grid grid-cols-2 gap-2 bg-slate-900/60 p-1 rounded-xl border border-slate-800">
+                    <button id="mode-pvp" class="py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 bg-amber-500 text-slate-950 shadow-md">
+                        <i class="fa-solid fa-users"></i> 2인 대전
+                    </button>
+                    <button id="mode-ai" class="py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 text-slate-400 hover:text-white">
+                        <i class="fa-solid fa-robot"></i> AI 대전
+                    </button>
+                </div>
+            </div>
+
+            <!-- Players Turn Dashboard Card -->
+            <div class="glass-panel p-4 rounded-2xl flex flex-col gap-3">
+                <div class="flex justify-between items-center border-b border-slate-800/80 pb-2">
+                    <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">현재 순번</span>
+                    <span id="turn-timer" class="text-xs font-mono bg-slate-800 text-amber-400 px-2.5 py-0.5 rounded-full border border-slate-700">00:00</span>
+                </div>
+
+                <!-- Player 1: Black -->
+                <div id="card-player1" class="relative p-3 rounded-xl border border-amber-500/50 bg-slate-800/80 transition-all duration-300 flex items-center justify-between turn-active">
+                    <div class="flex items-center gap-3">
+                        <div class="w-9 h-9 rounded-full bg-slate-950 border-2 border-slate-700 flex items-center justify-center shadow-lg relative">
+                            <div class="w-2.5 h-2.5 rounded-full bg-slate-400/40"></div>
+                        </div>
+                        <div>
+                            <div class="text-sm font-bold text-white flex items-center gap-1.5">
+                                흑돌 (선공)
+                                <span id="badge-p1" class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded font-normal">플레이어 1</span>
+                            </div>
+                            <div id="p1-stats" class="text-xs text-slate-400">착수: <span id="p1-count">0</span>회</div>
+                        </div>
+                    </div>
+                    <div id="p1-indicator" class="w-3 h-3 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]"></div>
+                </div>
+
+                <!-- Player 2: White -->
+                <div id="card-player2" class="relative p-3 rounded-xl border border-transparent bg-slate-900/40 opacity-60 transition-all duration-300 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-9 h-9 rounded-full bg-slate-100 border-2 border-slate-300 flex items-center justify-center shadow-lg relative">
+                            <div class="w-2.5 h-2.5 rounded-full bg-slate-400/40"></div>
+                        </div>
+                        <div>
+                            <div class="text-sm font-bold text-white flex items-center gap-1.5">
+                                백돌 (후공)
+                                <span id="badge-p2" class="text-[10px] bg-slate-700 text-slate-300 px-1.5 py-0.2 rounded font-normal">플레이어 2</span>
+                            </div>
+                            <div id="p2-stats" class="text-xs text-slate-400">착수: <span id="p2-count">0</span>회</div>
+                        </div>
+                    </div>
+                    <div id="p2-indicator" class="w-3 h-3 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)] hidden"></div>
+                </div>
+            </div>
+
+            <!-- Game Log / Move History -->
+            <div class="glass-panel p-4 rounded-2xl flex flex-col h-48">
+                <div class="flex items-center justify-between mb-2 pb-2 border-b border-slate-800">
+                    <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">착수 기보 (Move History)</span>
+                    <span id="total-moves" class="text-xs text-slate-400 font-mono">0 수</span>
+                </div>
+                <div id="move-history-list" class="flex-grow overflow-y-auto custom-scrollbar space-y-1.5 pr-1 text-xs">
+                    <div class="text-center text-slate-500 py-6">게임을 시작하고 돌을 놓아주세요.</div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Rules Modal -->
+    <div id="rules-modal" class="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden opacity-0 transition-opacity duration-300">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+            <button id="btn-close-rules" class="absolute top-4 right-4 text-slate-400 hover:text-white p-2">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center text-xl">
+                    <i class="fa-solid fa-book-open"></i>
+                </div>
+                <div>
+                    <h3 class="text-lg font-bold text-white">오목 게임 규칙</h3>
+                    <p class="text-xs text-slate-400">Gomoku Basic Rules</p>
+                </div>
+            </div>
+            <div class="space-y-3 text-xs text-slate-300 leading-relaxed border-t border-slate-800 pt-3">
+                <p>1. <strong class="text-amber-400">15x15 격자판</strong>의 교차점에 두 사람이 번갈아 돌을 놓습니다.</p>
+                <p>2. 먼저 자신 컬러의 돌을 가로, 세로, 대각선 중 어느 방향으로든 <strong class="text-amber-400">연속 5개</strong> 먼저 연결하는 사람이 승리합니다.</p>
+                <p>3. 흑돌이 먼저 착수하며, 백돌이 다음에 착수합니다.</p>
+                <p>4. 단말기 한 대에서 두 사람이 교대로 플레이하거나, AI 모드로 컴퓨터와 맞붙을 수 있습니다.</p>
+            </div>
+            <button id="btn-confirm-rules" class="mt-6 w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-xl text-xs transition-all border border-slate-700">
+                확인했습니다
+            </button>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="w-full text-center py-3 text-xs text-slate-500 border-t border-slate-900">
+        15x15 Gomoku Board Game &bull; Created with HTML5 Canvas & Tailwind CSS
+    </footer>
+
+    <script>
+        /* Web Audio API Synthesizer for Realistic Sound Effects */
+        class SoundManager {
+            constructor() {
+                this.ctx = null;
+                this.enabled = true;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    if (AudioContext) {
+                        this.ctx = new AudioContext();
+                    }
+                }
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            playStoneSound() {
+                if (!this.enabled) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const now = this.ctx.currentTime;
+                
+                // Click high frequency snap
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(800, now);
+                osc.frequency.exponentialRampToValueAtTime(120, now + 0.08);
+
+                gain.gain.setValueAtTime(0.7, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                osc.start(now);
+                osc.stop(now + 0.08);
+
+                // Wood resonance thump
+                const osc2 = this.ctx.createOscillator();
+                const gain2 = this.ctx.createGain();
+
+                osc2.type = 'sine';
+                osc2.frequency.setValueAtTime(220, now);
+                osc2.frequency.exponentialRampToValueAtTime(60, now + 0.12);
+
+                gain2.gain.setValueAtTime(0.5, now);
+                gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+
+                osc2.connect(gain2);
+                gain2.connect(this.ctx.destination);
+
+                osc2.start(now);
+                osc2.stop(now + 0.12);
+            }
+
+            playWinSound() {
+                if (!this.enabled) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const now = this.ctx.currentTime;
+                const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+
+                notes.forEach((freq, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+
+                    osc.type = 'sine';
+                    osc.frequency.value = freq;
+
+                    const startTime = now + idx * 0.1;
+                    gain.gain.setValueAtTime(0, startTime);
+                    gain.gain.linearRampToValueAtTime(0.3, startTime + 0.03);
+                    gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.4);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    osc.start(startTime);
+                    osc.stop(startTime + 0.4);
+                });
+            }
+
+            playMatchWinSound() {
+                if (!this.enabled) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const now = this.ctx.currentTime;
+                const notes = [523.25, 659.25, 783.99, 987.77, 1046.50, 1318.51];
+
+                notes.forEach((freq, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+
+                    osc.type = 'triangle';
+                    osc.frequency.value = freq;
+
+                    const startTime = now + idx * 0.12;
+                    gain.gain.setValueAtTime(0, startTime);
+                    gain.gain.linearRampToValueAtTime(0.4, startTime + 0.04);
+                    gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.6);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    osc.start(startTime);
+                    osc.stop(startTime + 0.6);
+                });
+            }
+
+            playErrorSound() {
+                if (!this.enabled) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(150, now);
+                osc.frequency.linearRampToValueAtTime(100, now + 0.15);
+
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                osc.start(now);
+                osc.stop(now + 0.15);
+            }
+        }
+
+        const soundManager = new SoundManager();
+
+        // Game Constants & Configuration
+        const BOARD_SIZE = 15; // 15x15 Grid
+        const EMPTY = 0;
+        const BLACK = 1;
+        const WHITE = 2;
+
+        // State variables
+        let board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(EMPTY));
+        let moveHistory = []; // {row, col, player, moveNum}
+        let currentPlayer = BLACK;
+        let isGameOver = false;
+        let showMoveNumbers = false;
+        let gameMode = 'pvp'; // 'pvp' or 'ai'
+        let winLine = null; // Stores winning sequence coordinates for highlighting
+        let turnStartTime = Date.now();
+        let timerInterval = null;
+
+        // Series Match (Best of 3) State variables
+        let p1SeriesWins = 0;
+        let p2SeriesWins = 0;
+        let currentRound = 1;
+        const TARGET_WINS = 2; // 3전 2선승제
+        let isSeriesOver = false;
+
+        // DOM elements
+        const canvas = document.getElementById('omokCanvas');
+        const ctx = canvas.getContext('2d');
+        const boardOverlay = document.getElementById('board-overlay');
+        const winnerAnnouncement = document.getElementById('winner-announcement');
+        const winnerTitle = document.getElementById('winner-title');
+        const winnerSubtitle = document.getElementById('winner-subtitle');
+        const winnerIcon = document.getElementById('winner-icon');
+        const winnerIconWrapper = document.getElementById('winner-icon-wrapper');
+        const winnerBadge = document.getElementById('winner-badge');
+        const moveHistoryList = document.getElementById('move-history-list');
+
+        // Buttons & Controls
+        const btnUndo = document.getElementById('btn-undo');
+        const btnToggleNumbers = document.getElementById('btn-toggle-numbers');
+        const textNumbers = document.getElementById('text-numbers');
+        const btnRestart = document.getElementById('btn-restart');
+        const btnModalNextRound = document.getElementById('btn-modal-next-round');
+        const btnModalResetSeries = document.getElementById('btn-modal-reset-series');
+        const textModalNext = document.getElementById('text-modal-next');
+        const btnResetSeriesScore = document.getElementById('btn-reset-series-score');
+        const btnSound = document.getElementById('btn-sound');
+        const iconSound = document.getElementById('icon-sound');
+        const btnRules = document.getElementById('btn-rules');
+        const rulesModal = document.getElementById('rules-modal');
+        const btnCloseRules = document.getElementById('btn-close-rules');
+        const btnConfirmRules = document.getElementById('btn-confirm-rules');
+
+        // Series Scoreboard DOM elements
+        const seriesRoundDisplay = document.getElementById('series-round-display');
+        const seriesScoreText = document.getElementById('series-score-text');
+        const p2SeriesLabel = document.getElementById('p2-series-label');
+        const p1Win1 = document.getElementById('p1-win-1');
+        const p1Win2 = document.getElementById('p1-win-2');
+        const p2Win1 = document.getElementById('p2-win-1');
+        const p2Win2 = document.getElementById('p2-win-2');
+
+        // Mode buttons
+        const modePvpBtn = document.getElementById('mode-pvp');
+        const modeAiBtn = document.getElementById('mode-ai');
+
+        // Player cards UI
+        const cardPlayer1 = document.getElementById('card-player1');
+        const cardPlayer2 = document.getElementById('card-player2');
+        const p1Indicator = document.getElementById('p1-indicator');
+        const p2Indicator = document.getElementById('p2-indicator');
+        const p1Count = document.getElementById('p1-count');
+        const p2Count = document.getElementById('p2-count');
+        const totalMovesEl = document.getElementById('total-moves');
+        const turnTimerEl = document.getElementById('turn-timer');
+        const badgeP2 = document.getElementById('badge-p2');
+
+        // Board Layout Sizing
+        let cellSize = 0;
+        let padding = 0;
+        let canvasSize = 0;
+
+        function resizeCanvas() {
+            // Determine sizing according to screen dimensions
+            const maxAllowedWidth = Math.min(window.innerWidth - 32, 540);
+            canvasSize = Math.max(300, maxAllowedWidth);
+            
+            // Set actual canvas size considering high DPI displays
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = canvasSize * dpr;
+            canvas.height = canvasSize * dpr;
+            canvas.style.width = `${canvasSize}px`;
+            canvas.style.height = `${canvasSize}px`;
+
+            ctx.scale(dpr, dpr);
+
+            // Compute board padding and cell spacing
+            padding = canvasSize / (BOARD_SIZE + 1);
+            cellSize = (canvasSize - 2 * padding) / (BOARD_SIZE - 1);
+
+            renderBoard();
+        }
+
+        function renderBoard() {
+            ctx.clearRect(0, 0, canvasSize, canvasSize);
+
+            // 1. Draw Grid Lines
+            ctx.strokeStyle = '#4A3210';
+            ctx.lineWidth = 1.2;
+
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                const pos = padding + i * cellSize;
+
+                // Horizontal line
+                ctx.beginPath();
+                ctx.moveTo(padding, pos);
+                ctx.lineTo(canvasSize - padding, pos);
+                ctx.stroke();
+
+                // Vertical line
+                ctx.beginPath();
+                ctx.moveTo(pos, padding);
+                ctx.lineTo(pos, canvasSize - padding);
+                ctx.stroke();
+            }
+
+            // 2. Draw Star Points (화점 - standard 5 points: (3,3), (3,11), (7,7), (11,3), (11,11))
+            const starIndices = [3, 7, 11];
+            ctx.fillStyle = '#3A2408';
+
+            starIndices.forEach(r => {
+                starIndices.forEach(c => {
+                    const cx = padding + c * cellSize;
+                    const cy = padding + r * cellSize;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, Math.max(2.5, cellSize * 0.08), 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            });
+
+            // 3. Draw Placed Stones
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (board[r][c] !== EMPTY) {
+                        drawStone(r, c, board[r][c]);
+                    }
+                }
+            }
+
+            // 4. Highlight Last Move
+            if (moveHistory.length > 0 && !isGameOver) {
+                const lastMove = moveHistory[moveHistory.length - 1];
+                const cx = padding + lastMove.col * cellSize;
+                const cy = padding + lastMove.row * cellSize;
+                
+                ctx.beginPath();
+                ctx.arc(cx, cy, cellSize * 0.18, 0, Math.PI * 2);
+                ctx.fillStyle = lastMove.player === BLACK ? '#EF4444' : '#DC2626';
+                ctx.fill();
+            }
+
+            // 5. Draw Winning Sequence Line Glow
+            if (winLine && winLine.length > 0) {
+                drawWinningHighlight();
+            }
+        }
+
+        function drawStone(row, col, player) {
+            const cx = padding + col * cellSize;
+            const cy = padding + row * cellSize;
+            const radius = cellSize * 0.43;
+
+            ctx.save();
+
+            // Shadow under stone
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+            ctx.shadowBlur = radius * 0.4;
+            ctx.shadowOffsetX = radius * 0.15;
+            ctx.shadowOffsetY = radius * 0.2;
+
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+
+            // Radial Gradient for 3D sphere look
+            const grad = ctx.createRadialGradient(
+                cx - radius * 0.3, cy - radius * 0.3, radius * 0.1,
+                cx, cy, radius
+            );
+
+            if (player === BLACK) {
+                grad.addColorStop(0, '#555555');
+                grad.addColorStop(0.5, '#222222');
+                grad.addColorStop(1, '#050505');
+            } else {
+                grad.addColorStop(0, '#FFFFFF');
+                grad.addColorStop(0.7, '#E2E8F0');
+                grad.addColorStop(1, '#CBD5E1');
+            }
+
+            ctx.fillStyle = grad;
+            ctx.fill();
+            ctx.restore();
+
+            // Optional: Draw Move Number
+            if (showMoveNumbers) {
+                const moveObj = moveHistory.find(m => m.row === row && m.col === col);
+                if (moveObj) {
+                    ctx.font = `bold ${Math.max(10, Math.floor(cellSize * 0.4))}px sans-serif`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillStyle = player === BLACK ? '#FFFFFF' : '#0F172A';
+                    ctx.fillText(moveObj.moveNum.toString(), cx, cy);
+                }
+            }
+        }
+
+        function drawWinningHighlight() {
+            if (!winLine || winLine.length < 5) return;
+
+            const startPoint = winLine[0];
+            const endPoint = winLine[winLine.length - 1];
+
+            const sx = padding + startPoint.col * cellSize;
+            const sy = padding + startPoint.row * cellSize;
+            const ex = padding + endPoint.col * cellSize;
+            const ey = padding + endPoint.row * cellSize;
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(ex, ey);
+            ctx.lineWidth = cellSize * 0.25;
+            ctx.strokeStyle = 'rgba(245, 158, 11, 0.8)';
+            ctx.lineCap = 'round';
+            ctx.shadowColor = '#F59E0B';
+            ctx.shadowBlur = 12;
+            ctx.stroke();
+
+            // Draw glowing circles around winning stones
+            winLine.forEach(p => {
+                const px = padding + p.col * cellSize;
+                const py = padding + p.row * cellSize;
+                ctx.beginPath();
+                ctx.arc(px, py, cellSize * 0.45, 0, Math.PI * 2);
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = '#F59E0B';
+                ctx.stroke();
+            });
+
+            ctx.restore();
+        }
+
+        function handleCanvasClick(e) {
+            if (isGameOver) return;
+            if (gameMode === 'ai' && currentPlayer === WHITE) return; // Prevent human click on AI turn
+
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+            const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+
+            if (clientX === undefined || clientY === undefined) return;
+
+            const x = clientX - rect.left;
+            const y = clientY - rect.top;
+
+            // Find closest intersection
+            const col = Math.round((x - padding) / cellSize);
+            const row = Math.round((y - padding) / cellSize);
+
+            if (row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE) {
+                placeStone(row, col);
+            }
+        }
+
+        function placeStone(row, col) {
+            if (board[row][col] !== EMPTY || isGameOver) {
+                soundManager.playErrorSound();
+                return false;
+            }
+
+            // Sound
+            soundManager.playStoneSound();
+
+            // Set board state
+            board[row][col] = currentPlayer;
+            const moveNum = moveHistory.length + 1;
+            moveHistory.push({ row, col, player: currentPlayer, moveNum });
+
+            // Re-render
+            renderBoard();
+            updateUI();
+
+            // Check Win
+            const winningStones = checkWin(row, col, currentPlayer);
+            if (winningStones) {
+                isGameOver = true;
+                winLine = winningStones;
+                renderBoard();
+
+                // Update Series Wins
+                if (currentPlayer === BLACK) {
+                    p1SeriesWins++;
+                } else {
+                    p2SeriesWins++;
+                }
+
+                if (p1SeriesWins >= TARGET_WINS || p2SeriesWins >= TARGET_WINS) {
+                    isSeriesOver = true;
+                    soundManager.playMatchWinSound();
+                } else {
+                    soundManager.playWinSound();
+                }
+
+                updateSeriesScoreUI();
+                setTimeout(() => showVictoryModal(currentPlayer), 400);
+                return true;
+            }
+
+            // Check Board Full (Draw)
+            if (moveHistory.length === BOARD_SIZE * BOARD_SIZE) {
+                isGameOver = true;
+                setTimeout(() => showVictoryModal(EMPTY), 300);
+                return true;
+            }
+
+            // Switch Turn
+            currentPlayer = currentPlayer === BLACK ? WHITE : BLACK;
+            resetTurnTimer();
+            updateUI();
+
+            // Trigger AI if in AI mode and it's White's turn
+            if (gameMode === 'ai' && currentPlayer === WHITE && !isGameOver) {
+                setTimeout(makeAIMove, 350);
+            }
+
+            return true;
+        }
+
+        function checkWin(r, c, player) {
+            const directions = [
+                [[0, 1], [0, -1]],   // Horizontal
+                [[1, 0], [-1, 0]],   // Vertical
+                [[1, 1], [-1, -1]],  // Diagonal \
+                [[1, -1], [-1, 1]]   // Diagonal /
+            ];
+
+            for (let d = 0; d < directions.length; d++) {
+                const dir = directions[d];
+                let line = [{ row: r, col: c }];
+
+                // Check positive and negative directions
+                dir.forEach(([dr, dc]) => {
+                    let nr = r + dr;
+                    let nc = c + dc;
+                    while (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === player) {
+                        line.push({ row: nr, col: nc });
+                        nr += dr;
+                        nc += dc;
+                    }
+                });
+
+                // Standard win requirement: 5 or more in a row
+                if (line.length >= 5) {
+                    // Sort line by coordinates for clean highlight drawing
+                    line.sort((a, b) => (a.row === b.row ? a.col - b.col : a.row - b.row));
+                    return line;
+                }
+            }
+
+            return null;
+        }
+
+        function makeAIMove() {
+            if (isGameOver) return;
+
+            let bestScore = -Infinity;
+            let bestMove = null;
+
+            // Evaluator helper for candidates
+            const candidates = getCandidateMoves();
+
+            if (candidates.length === 0) {
+                placeStone(7, 7);
+                return;
+            }
+
+            for (const { row, col } of candidates) {
+                // Score attack capability for AI (WHITE)
+                const attackScore = evaluatePoint(row, col, WHITE);
+                // Score defense capability against Player (BLACK)
+                const defenseScore = evaluatePoint(row, col, BLACK);
+
+                // Combine scores with heavy priority on stopping enemy 5 / 4
+                const totalScore = attackScore * 1.1 + defenseScore;
+
+                if (totalScore > bestScore) {
+                    bestScore = totalScore;
+                    bestMove = { row, col };
+                }
+            }
+
+            if (bestMove) {
+                placeStone(bestMove.row, bestMove.col);
+            }
+        }
+
+        function getCandidateMoves() {
+            const candidateSet = new Set();
+            const moves = [];
+
+            // Find all empty cells adjacent (within 2 distance) to existing stones
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (board[r][c] !== EMPTY) {
+                        for (let dr = -2; dr <= 2; dr++) {
+                            for (let dc = -2; dc <= 2; dc++) {
+                                const nr = r + dr;
+                                const nc = c + dc;
+                                if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === EMPTY) {
+                                    const key = `${nr},${nc}`;
+                                    if (!candidateSet.has(key)) {
+                                        candidateSet.add(key);
+                                        moves.push({ row: nr, col: nc });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // First move fallback
+            if (moves.length === 0) {
+                moves.push({ row: 7, col: 7 });
+            }
+
+            return moves;
+        }
+
+        function evaluatePoint(r, c, player) {
+            let score = 0;
+            const directions = [[0, 1], [1, 0], [1, 1], [1, -1]];
+
+            directions.forEach(([dr, dc]) => {
+                let count = 1;
+                let openEnds = 0;
+
+                // Check direction +
+                let nr = r + dr;
+                let nc = c + dc;
+                while (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === player) {
+                    count++;
+                    nr += dr;
+                    nc += dc;
+                }
+                if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === EMPTY) {
+                    openEnds++;
+                }
+
+                // Check direction -
+                nr = r - dr;
+                nc = c - dc;
+                while (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === player) {
+                    count++;
+                    nr -= dr;
+                    nc -= dc;
+                }
+                if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === EMPTY) {
+                    openEnds++;
+                }
+
+                // Score assignment table based on Gomoku patterns
+                if (count >= 5) score += 100000;
+                else if (count === 4 && openEnds === 2) score += 10000;
+                else if (count === 4 && openEnds === 1) score += 1500;
+                else if (count === 3 && openEnds === 2) score += 800;
+                else if (count === 3 && openEnds === 1) score += 100;
+                else if (count === 2 && openEnds === 2) score += 50;
+                else if (count === 2 && openEnds === 1) score += 10;
+            });
+
+            return score;
+        }
+
+        function updateUI() {
+            // Update Move Counters
+            const p1Moves = moveHistory.filter(m => m.player === BLACK).length;
+            const p2Moves = moveHistory.filter(m => m.player === WHITE).length;
+
+            p1Count.textContent = p1Moves;
+            p2Count.textContent = p2Moves;
+            totalMovesEl.textContent = `${moveHistory.length} 수`;
+
+            // Active Card Styling
+            if (currentPlayer === BLACK) {
+                cardPlayer1.classList.add('turn-active', 'border-amber-500/50', 'bg-slate-800/80');
+                cardPlayer1.classList.remove('opacity-60', 'border-transparent', 'bg-slate-900/40');
+                p1Indicator.classList.remove('hidden');
+
+                cardPlayer2.classList.remove('turn-active', 'border-amber-500/50', 'bg-slate-800/80');
+                cardPlayer2.classList.add('opacity-60', 'border-transparent', 'bg-slate-900/40');
+                p2Indicator.classList.add('hidden');
+            } else {
+                cardPlayer2.classList.add('turn-active', 'border-amber-500/50', 'bg-slate-800/80');
+                cardPlayer2.classList.remove('opacity-60', 'border-transparent', 'bg-slate-900/40');
+                p2Indicator.classList.remove('hidden');
+
+                cardPlayer1.classList.remove('turn-active', 'border-amber-500/50', 'bg-slate-800/80');
+                cardPlayer1.classList.add('opacity-60', 'border-transparent', 'bg-slate-900/40');
+                p1Indicator.classList.add('hidden');
+            }
+
+            // Undo Button state
+            btnUndo.disabled = moveHistory.length === 0 || isGameOver || (gameMode === 'ai' && currentPlayer === WHITE);
+
+            // Move History List Rendering
+            if (moveHistory.length === 0) {
+                moveHistoryList.innerHTML = `<div class="text-center text-slate-500 py-6">게임을 시작하고 돌을 놓아주세요.</div>`;
+            } else {
+                moveHistoryList.innerHTML = moveHistory.slice().reverse().map(m => {
+                    const colLetter = String.fromCharCode(65 + m.col);
+                    const rowNum = 15 - m.row;
+                    const isBlack = m.player === BLACK;
+                    return `
+                        <div class="flex items-center justify-between p-1.5 rounded-lg bg-slate-800/50 border border-slate-700/50">
+                            <div class="flex items-center gap-2">
+                                <span class="font-mono text-[10px] text-slate-400 w-5">#${m.moveNum}</span>
+                                <span class="w-3 h-3 rounded-full ${isBlack ? 'bg-slate-950 border border-slate-600' : 'bg-slate-100'} inline-block"></span>
+                                <span class="font-bold ${isBlack ? 'text-amber-300' : 'text-slate-200'}">${isBlack ? '흑' : '백'}</span>
+                            </div>
+                            <span class="font-mono font-medium text-slate-300 text-xs">${colLetter}${rowNum} (${m.col + 1}, ${m.row + 1})</span>
+                        </div>
+                    `;
+                }).join('');
+            }
+        }
+
+        function resetTurnTimer() {
+            clearInterval(timerInterval);
+            turnStartTime = Date.now();
+            updateTimerDisplay();
+
+            timerInterval = setInterval(updateTimerDisplay, 1000);
+        }
+
+        function updateTimerDisplay() {
+            if (isGameOver) {
+                clearInterval(timerInterval);
+                return;
+            }
+            const elapsedSeconds = Math.floor((Date.now() - turnStartTime) / 1000);
+            const mins = Math.floor(elapsedSeconds / 60).toString().padStart(2, '0');
+            const secs = (elapsedSeconds % 60).toString().padStart(2, '0');
+            turnTimerEl.textContent = `${mins}:${secs}`;
+        }
+
+        function updateSeriesScoreUI() {
+            seriesRoundDisplay.textContent = `ROUND ${currentRound}`;
+            seriesScoreText.textContent = `${p1SeriesWins} : ${p2SeriesWins}`;
+            p2SeriesLabel.textContent = gameMode === 'ai' ? '컴퓨터' : '백돌 (P2)';
+
+            // P1 Dots
+            p1Win1.className = p1SeriesWins >= 1 
+                ? 'w-3.5 h-3.5 rounded-full bg-amber-400 border border-amber-300 shadow-[0_0_6px_rgba(251,191,36,0.8)] inline-block transition-all'
+                : 'w-3.5 h-3.5 rounded-full border border-amber-500/40 bg-slate-800 inline-block transition-all';
+            p1Win2.className = p1SeriesWins >= 2 
+                ? 'w-3.5 h-3.5 rounded-full bg-amber-400 border border-amber-300 shadow-[0_0_6px_rgba(251,191,36,0.8)] inline-block transition-all'
+                : 'w-3.5 h-3.5 rounded-full border border-amber-500/40 bg-slate-800 inline-block transition-all';
+
+            // P2 Dots
+            p2Win1.className = p2SeriesWins >= 1 
+                ? 'w-3.5 h-3.5 rounded-full bg-amber-400 border border-amber-300 shadow-[0_0_6px_rgba(251,191,36,0.8)] inline-block transition-all'
+                : 'w-3.5 h-3.5 rounded-full border border-amber-500/40 bg-slate-800 inline-block transition-all';
+            p2Win2.className = p2SeriesWins >= 2 
+                ? 'w-3.5 h-3.5 rounded-full bg-amber-400 border border-amber-300 shadow-[0_0_6px_rgba(251,191,36,0.8)] inline-block transition-all'
+                : 'w-3.5 h-3.5 rounded-full border border-amber-500/40 bg-slate-800 inline-block transition-all';
+        }
+
+        function resetSeries() {
+            p1SeriesWins = 0;
+            p2SeriesWins = 0;
+            currentRound = 1;
+            isSeriesOver = false;
+            updateSeriesScoreUI();
+            resetGame();
+        }
+
+        function showVictoryModal(winner) {
+            boardOverlay.classList.remove('opacity-0', 'pointer-events-none');
+            boardOverlay.classList.add('opacity-100');
+            winnerAnnouncement.classList.remove('scale-90');
+            winnerAnnouncement.classList.add('scale-100');
+
+            if (isSeriesOver) {
+                winnerBadge.textContent = "🏆 3전 2선승제 최종 승리!";
+                winnerBadge.className = "inline-block px-3 py-1 rounded-full text-xs font-bold bg-amber-500/30 text-amber-300 border border-amber-400/50 mb-2 animate-bounce";
+                textModalNext.textContent = "새 매치 시작";
+                
+                if (winner === BLACK) {
+                    winnerIconWrapper.className = 'w-16 h-16 rounded-full mx-auto mb-3 flex items-center justify-center shadow-lg bg-amber-500/20 text-amber-400 border border-amber-500/40';
+                    winnerIcon.className = 'fa-solid fa-trophy text-3xl text-amber-400';
+                    winnerTitle.textContent = '흑돌(P1) 최종 승리!';
+                    winnerSubtitle.textContent = `축하합니다! 세트 스코어 ${p1SeriesWins}:${p2SeriesWins}로 매치에서 최종 승리했습니다.`;
+                } else {
+                    winnerIconWrapper.className = 'w-16 h-16 rounded-full mx-auto mb-3 flex items-center justify-center shadow-lg bg-slate-200/20 text-slate-100 border border-slate-300/40';
+                    winnerIcon.className = 'fa-solid fa-trophy text-3xl text-slate-100';
+                    winnerTitle.textContent = gameMode === 'ai' ? '컴퓨터(AI) 최종 승리!' : '백돌(P2) 최종 승리!';
+                    winnerSubtitle.textContent = `세트 스코어 ${p2SeriesWins}:${p1SeriesWins}로 시리즈 승리가 확정되었습니다.`;
+                }
+            } else {
+                winnerBadge.textContent = `ROUND ${currentRound} 승리`;
+                winnerBadge.className = "inline-block px-3 py-1 rounded-full text-xs font-bold bg-slate-800 text-amber-400 border border-amber-500/30 mb-2";
+                textModalNext.textContent = "다음 라운드 진행";
+
+                if (winner === BLACK) {
+                    winnerIconWrapper.className = 'w-16 h-16 rounded-full mx-auto mb-3 flex items-center justify-center shadow-lg bg-amber-500/20 text-amber-400 border border-amber-500/40';
+                    winnerIcon.className = 'fa-solid fa-medal text-3xl text-amber-400';
+                    winnerTitle.textContent = '흑돌 라운드 승리!';
+                    winnerSubtitle.textContent = `라운드 ${currentRound}를 가져갔습니다. (현재 스코어 ${p1SeriesWins}:${p2SeriesWins})`;
+                } else if (winner === WHITE) {
+                    winnerIconWrapper.className = 'w-16 h-16 rounded-full mx-auto mb-3 flex items-center justify-center shadow-lg bg-slate-200/20 text-slate-100 border border-slate-300/40';
+                    winnerIcon.className = 'fa-solid fa-medal text-3xl text-slate-100';
+                    winnerTitle.textContent = gameMode === 'ai' ? '컴퓨터(AI) 라운드 승리!' : '백돌 라운드 승리!';
+                    winnerSubtitle.textContent = `라운드 ${currentRound}를 따냈습니다. (현재 스코어 ${p1SeriesWins}:${p2SeriesWins})`;
+                } else {
+                    winnerIconWrapper.className = 'w-16 h-16 rounded-full mx-auto mb-3 flex items-center justify-center shadow-lg bg-blue-500/20 text-blue-400 border border-blue-500/40';
+                    winnerIcon.className = 'fa-solid fa-handshake text-3xl text-blue-400';
+                    winnerTitle.textContent = '무승부!';
+                    winnerSubtitle.textContent = '모든 칸이 차서 무승부가 되었습니다. 승점 변동 없이 다음 라운드로 진행합니다.';
+                }
+            }
+        }
+
+        function hideVictoryModal() {
+            boardOverlay.classList.add('opacity-0', 'pointer-events-none');
+            boardOverlay.classList.remove('opacity-100');
+            winnerAnnouncement.classList.add('scale-90');
+            winnerAnnouncement.classList.remove('scale-100');
+        }
+
+        function proceedNextRound() {
+            if (isSeriesOver) {
+                resetSeries();
+            } else {
+                currentRound++;
+                updateSeriesScoreUI();
+                resetGame();
+            }
+        }
+
+        function resetGame() {
+            board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(EMPTY));
+            moveHistory = [];
+            currentPlayer = BLACK;
+            isGameOver = false;
+            winLine = null;
+
+            hideVictoryModal();
+            resetTurnTimer();
+            renderBoard();
+            updateUI();
+        }
+
+        function undoMove() {
+            if (moveHistory.length === 0 || isGameOver) return;
+
+            if (gameMode === 'pvp') {
+                const lastMove = moveHistory.pop();
+                board[lastMove.row][lastMove.col] = EMPTY;
+                currentPlayer = lastMove.player;
+            } else {
+                // In AI mode, undo twice (AI move + Player move)
+                if (moveHistory.length >= 1) {
+                    let last = moveHistory.pop();
+                    board[last.row][last.col] = EMPTY;
+                    if (moveHistory.length > 0 && last.player === WHITE) {
+                        let prev = moveHistory.pop();
+                        board[prev.row][prev.col] = EMPTY;
+                    }
+                    currentPlayer = BLACK;
+                }
+            }
+
+            winLine = null;
+            isGameOver = false;
+            hideVictoryModal();
+            soundManager.playStoneSound();
+            renderBoard();
+            resetTurnTimer();
+            updateUI();
+        }
+
+        // Canvas interactions
+        canvas.addEventListener('click', handleCanvasClick);
+
+        // Control buttons
+        btnUndo.addEventListener('click', undoMove);
+
+        btnToggleNumbers.addEventListener('click', () => {
+            showMoveNumbers = !showMoveNumbers;
+            textNumbers.textContent = showMoveNumbers ? '수순 숨기기' : '수순 표시';
+            btnToggleNumbers.classList.toggle('bg-blue-600/30', showMoveNumbers);
+            btnToggleNumbers.classList.toggle('border-blue-500/40', showMoveNumbers);
+            renderBoard();
+        });
+
+        btnRestart.addEventListener('click', resetGame);
+        btnModalNextRound.addEventListener('click', proceedNextRound);
+        btnModalResetSeries.addEventListener('click', resetSeries);
+        btnResetSeriesScore.addEventListener('click', resetSeries);
+
+        // Sound toggle
+        btnSound.addEventListener('click', () => {
+            soundManager.enabled = !soundManager.enabled;
+            if (soundManager.enabled) {
+                iconSound.className = 'fa-solid fa-volume-high text-amber-400';
+            } else {
+                iconSound.className = 'fa-solid fa-volume-xmark text-slate-500';
+            }
+        });
+
+        // Rules modal
+        btnRules.addEventListener('click', () => {
+            rulesModal.classList.remove('hidden');
+            setTimeout(() => rulesModal.classList.remove('opacity-0'), 10);
+        });
+
+        const closeRulesFn = () => {
+            rulesModal.classList.add('opacity-0');
+            setTimeout(() => rulesModal.classList.add('hidden'), 300);
+        };
+        btnCloseRules.addEventListener('click', closeRulesFn);
+        btnConfirmRules.addEventListener('click', closeRulesFn);
+
+        // Game Mode Switching
+        modePvpBtn.addEventListener('click', () => {
+            if (gameMode === 'pvp') return;
+            gameMode = 'pvp';
+            modePvpBtn.className = 'py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 bg-amber-500 text-slate-950 shadow-md';
+            modeAiBtn.className = 'py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 text-slate-400 hover:text-white';
+            badgeP2.textContent = '플레이어 2';
+            resetSeries();
+        });
+
+        modeAiBtn.addEventListener('click', () => {
+            if (gameMode === 'ai') return;
+            gameMode = 'ai';
+            modeAiBtn.className = 'py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 bg-amber-500 text-slate-950 shadow-md';
+            modePvpBtn.className = 'py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 text-slate-400 hover:text-white';
+            badgeP2.textContent = '컴퓨터 AI';
+            resetSeries();
+        });
+
+        // Resize Listener
+        window.addEventListener('resize', resizeCanvas);
+
+        // Initialization
+        window.onload = () => {
+            resizeCanvas();
+            updateSeriesScoreUI();
+            resetGame();
+        };
+    </script>
+</body>
+</html>
